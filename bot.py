@@ -1,7 +1,6 @@
 import os
 import json
 import asyncio
-from io import BytesIO
 from threading import Thread
 from flask import Flask
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
@@ -13,7 +12,7 @@ web_app = Flask(__name__)
 
 @web_app.route('/')
 def home():
-    return "Music Bot is running perfectly in memory!"
+    return "Music Bot is running safely!"
 
 def run_web_server():
     port = int(os.getenv("PORT", 10000))
@@ -120,7 +119,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ No match found in the database. Returning to main menu.", reply_markup=MAIN_KEYBOARD)
         return
 
-    # 4. Audio Processing and Stream Pipeline Execution (ZERO DISK USE)
+    # 4. Audio Processing (Hybrid Pipeline)
     if text.isdigit():
         song_id = int(text)
         song = next((s for s in SONGS_DB if s['song_id'] == song_id), None)
@@ -129,45 +128,47 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Invalid track selection ID number.")
             return
 
-        status_msg = await update.message.reply_text(f"⏳ Processing <b>'{song['title']}'</b>...\nStreaming audio data securely. Please hold close.")
+        status_msg = await update.message.reply_text(f"⏳ Processing <b>'{song['title']}'</b>...\nBypassing network verification checks. Please wait.")
         
-        # Stream directly into RAM using dynamic pipe targets to completely bypass local storage limits
+        # Safe format extraction options targeting local temporary storage footprints
+        output_filename = f"{song_id}.ext"
         ydl_opts = {
             'format': 'bestaudio/best',
-            'cookiefile': 'cookies.txt',
-            'outtmpl': '-',  # 🚀 Directs the download data loop directly to stdout stream pipeline
-            'logtostderr': True,
-            'quiet': True
+            'cookiefile': 'cookies.txt',  # Forces your fresh YouTube account session validation
+            'outtmpl': output_filename,
+            'quiet': True,
+            'nocheckcertificate': True
         }
 
         try:
-            buffer = BytesIO()
-            
-            def download_to_buffer():
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(song['youtube_url'], download=False)
-                    url = info['url']
-                    # Download the raw audio payload block into our virtual memory buffer
-                    with ydl.urlopen(url) as req:
-                        buffer.write(req.read())
-            
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, download_to_buffer)
-            buffer.seek(0)
+            
+            # Extract internal download parameters safely
+            info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(song['youtube_url'], download=True))
+            actual_filename = yt_dlp.YoutubeDL(ydl_opts).prepare_filename(info)
             
             await status_msg.edit_text("🚀 Uploading media back to Telegram chat space...")
             
-            # Send the virtual memory array cleanly
-            await update.message.reply_audio(
-                audio=buffer, 
-                filename=f"{song['title']}.mp3",
-                title=song['title'], 
-                performer=song['artist']
-            )
+            # Deliver the processed audio track straight to the user
+            with open(actual_filename, 'rb') as audio_file:
+                await update.message.reply_audio(
+                    audio=audio_file, 
+                    title=song['title'], 
+                    performer=song['artist']
+                )
+            
+            # CRITICAL CLEANUP: Immediate deletion right after upload to keep disk space at 0% usage
+            if os.path.exists(actual_filename):
+                os.remove(actual_filename)
+                
             await status_msg.delete()
 
         except Exception as e:
+            print(f"Pipeline tracking error check: {str(e)}")
             await status_msg.edit_text("❌ Media download extraction pipeline encountered a connection block or restricted access.")
+            # Safety cleanup loop in case of hitches
+            if 'actual_filename' in locals() and os.path.exists(actual_filename):
+                os.remove(actual_filename)
         return
 
     await update.message.reply_text("❌ Unrecognized command. Use the control buttons below.", reply_markup=MAIN_KEYBOARD)
