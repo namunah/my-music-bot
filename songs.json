@@ -1,0 +1,10 @@
+[
+  {
+    "song_id": 1,
+    "title": "Your Favorite Song Title",
+    "artist": "Artist Name",
+    "youtube_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "genre": "Melody",
+    "is_top_song": true
+  }
+]
