@@ -25,7 +25,7 @@ with open('songs.json', 'r') as f:
 
 FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
 
-# --- NEW IDEAL MENU KEYBOARD LAYOUTS ---
+# --- MENU KEYBOARD LAYOUTS ---
 MAIN_KEYBOARD = ReplyKeyboardMarkup(
     [
         [KeyboardButton('🔥 TOP 10 HITS')],
@@ -59,7 +59,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Main routing dashboard engine for text commands"""
     text = update.message.text
-    chat_id = str(update.message.chat_id)
 
     # 1. Main Navigation Routing
     if text == '🔥 TOP 10 HITS':
@@ -77,7 +76,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text in ['↩️ BACK TO MENU', '↩️ CANCEL']:
         await update.message.reply_text("Returned to main menu dashboard.", reply_markup=MAIN_KEYBOARD)
-        # Clear temporary context states if any
         if 'awaiting_search' in context.user_data:
             del context.user_data['awaiting_search']
         return
@@ -98,7 +96,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text in genre_mapping:
         target_genre = genre_mapping[text]
-        # Pull up to 15 tracks to fit within safe limits comfortably
         filtered = [s for s in SONGS_DB if s.get('genre') == target_genre][:15]
         
         if not filtered:
@@ -133,14 +130,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         song = next((s for s in SONGS_DB if s['song_id'] == song_id), None)
         
         if not song:
-            await update.message.reply_text("❌ Invalid track selection ID number. Please review the selection index grid.")
+            await update.message.reply_text("❌ Invalid track selection ID number. Please review the database catalog.")
             return
 
-        status_msg = await update.message.reply_text(f"⏳ Processing <b>'{song['title']}'</b>...\nFetching audio stream from YouTube pipeline. Please hold close.")
+        status_msg = await update.message.reply_text(f"⏳ Processing <b>'{song['title']}'</b>...\nFetching audio stream securely from YouTube pipeline. Please hold close.")
         
-        # Asynchronous stream conversion setup configurations
+        # Asynchronous stream conversion setup configurations using updated cookies profile
         ydl_opts = {
             'format': 'bestaudio/best',
+            'cookiefile': 'cookies.txt',  # 🚀 Bypasses YouTube blocks natively using your uploaded file
             'ffmpeg_location': FFMPEG_PATH,
             'outtmpl': f"downloads/{song_id}.%(ext)s",
             'postprocessors': [{
@@ -164,7 +162,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     performer=song['artist']
                 )
             
-            # Wipe temporary track cache footprint to save space cleanups
+            # Clean temporary file footprint from Render disk storage space
             if os.path.exists(audio_path):
                 os.remove(audio_path)
             await status_msg.delete()
@@ -174,7 +172,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Fallback response for unhandled entries
-    await update.message.reply_text("❌ Unrecognized options navigation entry index command. Use the control buttons below.", reply_markup=MAIN_KEYBOARD)
+    await update.message.reply_text("❌ Unrecognized options navigation entry command. Use the control buttons below.", reply_markup=MAIN_KEYBOARD)
 
 def main():
     TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
