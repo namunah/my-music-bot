@@ -121,7 +121,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ No match found in the database. Returning to main menu.", reply_markup=MAIN_KEYBOARD)
         return
 
-    # 4. Audio Processing (Hybrid Pipeline with Flexible Client Fallback)
+    # 4. Audio Processing Pipeline
     if text.isdigit():
         song_id = int(text)
         song = next((s for s in SONGS_DB if s['song_id'] == song_id), None)
@@ -132,14 +132,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         status_msg = await update.message.reply_text(f"⏳ Processing <b>'{song['title']}'</b>...\nBypassing network verification checks. Please wait.")
         
-        output_filename = f"{song_id}.ext"
+        output_filename = f"{song_id}.%(ext)s"
         ydl_opts = {
-            'format': 'bestaudio/best',
-            'cookiefile': 'cookies.txt',  # Authorizes connections via your working account data
+            # 🚀 CHANGE: Allows fallback to combined formats (ba*) if audio-only fails on mobile clients
+            'format': 'bestaudio/best/ba*',
+            'cookiefile': 'cookies.txt',  
             'outtmpl': output_filename,
             'quiet': True,
             'nocheckcertificate': True,
-            'format_sort': ['res', 'ext:mp4:m4a'],  # Falls back cleanly to mobile formats if raw web audio fails
             'extractor_args': {
                 'youtube': {
                     'player_client': ['android', 'web_embedded']
@@ -173,8 +173,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             error_message = str(e).split('\n')[0]
             await status_msg.edit_text(f"❌ Connection Trace Error:\n<code>{error_message}</code>", parse_mode="HTML")
             
-            if 'actual_filename' in locals() and os.path.exists(actual_filename):
-                os.remove(actual_filename)
+            # Safe checking for filename cleanup if it got created under another fallback extension name
+            if 'info' in locals():
+                try:
+                    fallback_name = yt_dlp.YoutubeDL(ydl_opts).prepare_filename(info)
+                    if os.path.exists(fallback_name):
+                        os.remove(fallback_name)
+                except:
+                    pass
         return
 
     await update.message.reply_text("❌ Unrecognized command. Use the control buttons below.", reply_markup=MAIN_KEYBOARD)
@@ -185,7 +191,6 @@ def main():
         print("Error: Missing TELEGRAM_BOT_TOKEN system configuration key.")
         return
 
-    # Pass deployment status checks on Render by spawning web endpoint concurrently
     Thread(target=run_web_server, daemon=True).start()
 
     app = Application.builder().token(TOKEN).build()
