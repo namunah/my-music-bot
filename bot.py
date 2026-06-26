@@ -121,7 +121,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ No match found in the database. Returning to main menu.", reply_markup=MAIN_KEYBOARD)
         return
 
-    # 4. Audio Processing Pipeline
+    # 4. Audio Processing Pipeline (Universal Format Fix)
     if text.isdigit():
         song_id = int(text)
         song = next((s for s in SONGS_DB if s['song_id'] == song_id), None)
@@ -134,8 +134,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         output_filename = f"{song_id}.%(ext)s"
         ydl_opts = {
-            # 🚀 CHANGE: Allows fallback to combined formats (ba*) if audio-only fails on mobile clients
-            'format': 'bestaudio/best/ba*',
+            # 🚀 FIXED: Tells yt-dlp to grab whatever format is available without crashing over strict audio tags
+            'format': 'best',
             'cookiefile': 'cookies.txt',  
             'outtmpl': output_filename,
             'quiet': True,
@@ -150,12 +150,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             loop = asyncio.get_event_loop()
             
-            # Extract internal download parameters safely
+            # Download file cleanly
             info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(song['youtube_url'], download=True))
             actual_filename = yt_dlp.YoutubeDL(ydl_opts).prepare_filename(info)
             
             await status_msg.edit_text("🚀 Uploading media back to Telegram chat space...")
             
+            # Send file cleanly
             with open(actual_filename, 'rb') as audio_file:
                 await update.message.reply_audio(
                     audio=audio_file, 
@@ -163,7 +164,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     performer=song['artist']
                 )
             
-            # Clear temporary disk footprint immediately to save system storage limits
+            # Wipe local file immediately
             if os.path.exists(actual_filename):
                 os.remove(actual_filename)
                 
@@ -173,7 +174,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             error_message = str(e).split('\n')[0]
             await status_msg.edit_text(f"❌ Connection Trace Error:\n<code>{error_message}</code>", parse_mode="HTML")
             
-            # Safe checking for filename cleanup if it got created under another fallback extension name
             if 'info' in locals():
                 try:
                     fallback_name = yt_dlp.YoutubeDL(ydl_opts).prepare_filename(info)
@@ -188,7 +188,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
     if not TOKEN:
-        print("Error: Missing TELEGRAM_BOT_TOKEN system configuration key.")
+        print("Error: Missing TELEGRAM_BOT_TOKEN key.")
         return
 
     Thread(target=run_web_server, daemon=True).start()
