@@ -8,8 +8,8 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 import yt_dlp
 import imageio_ffmpeg
 
-# --- TINY WEB SERVER FOR RENDER COMPLIANCE ---
-web_app = App('render_server')
+# --- FIXED WEB SERVER FOR RENDER COMPLIANCE ---
+web_app = Flask(__name__)  #  Fixed from App('render_server')
 
 @web_app.route('/')
 def home():
@@ -111,7 +111,7 @@ def main():
         print("Error: No TELEGRAM_BOT_TOKEN found!")
         return
 
-    # Start the dummy web server in a separate background thread
+    # Start the web server in a separate background thread
     Thread(target=run_web_server, daemon=True).start()
 
     app = Application.builder().token(TOKEN).build()
