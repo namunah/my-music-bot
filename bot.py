@@ -47,12 +47,14 @@ def get_cancel_keyboard():
 
 # --- COMMAND HANDLERS ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Sends welcome layout with navigation dashboard"""
     await update.message.reply_text(
         "👋 Welcome to your Curated Santali Music Bot!\n\nUse the buttons below to explore the playlist catalog.",
         reply_markup=MAIN_KEYBOARD
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Main routing dashboard engine for text commands"""
     text = update.message.text
 
     # 1. Main Navigation Routing
@@ -119,7 +121,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ No match found in the database. Returning to main menu.", reply_markup=MAIN_KEYBOARD)
         return
 
-    # 4. Audio Processing (Hybrid Pipeline with Client Impersonation)
+    # 4. Audio Processing (Hybrid Pipeline with Flexible Client Fallback)
     if text.isdigit():
         song_id = int(text)
         song = next((s for s in SONGS_DB if s['song_id'] == song_id), None)
@@ -133,11 +135,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         output_filename = f"{song_id}.ext"
         ydl_opts = {
             'format': 'bestaudio/best',
-            'cookiefile': 'cookies.txt',  # Reads account session data
+            'cookiefile': 'cookies.txt',  # Authorizes connections via your working account data
             'outtmpl': output_filename,
             'quiet': True,
             'nocheckcertificate': True,
-            # 🚀 FORCES YT-DLP TO MASQUERADE AS A REAL ANDROID / MOBILE EMBEDDED PHONE CLIENT TO BYPASS DATA CENTER BLOCKS:
+            'format_sort': ['res', 'ext:mp4:m4a'],  # Falls back cleanly to mobile formats if raw web audio fails
             'extractor_args': {
                 'youtube': {
                     'player_client': ['android', 'web_embedded']
@@ -161,14 +163,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     performer=song['artist']
                 )
             
+            # Clear temporary disk footprint immediately to save system storage limits
             if os.path.exists(actual_filename):
                 os.remove(actual_filename)
                 
             await status_msg.delete()
 
         except Exception as e:
-            # 🔍 Dynamically print the real raw server logs directly into the Telegram chat so we can track down exact blocks
-            error_message = str(e).split('\n')[0]  # Grab the first line of the error trace
+            error_message = str(e).split('\n')[0]
             await status_msg.edit_text(f"❌ Connection Trace Error:\n<code>{error_message}</code>", parse_mode="HTML")
             
             if 'actual_filename' in locals() and os.path.exists(actual_filename):
@@ -183,6 +185,7 @@ def main():
         print("Error: Missing TELEGRAM_BOT_TOKEN system configuration key.")
         return
 
+    # Pass deployment status checks on Render by spawning web endpoint concurrently
     Thread(target=run_web_server, daemon=True).start()
 
     app = Application.builder().token(TOKEN).build()
