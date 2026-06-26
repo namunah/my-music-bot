@@ -1,19 +1,19 @@
 import os
 import json
 import asyncio
+from io import BytesIO
 from threading import Thread
 from flask import Flask
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import yt_dlp
-import imageio_ffmpeg
 
 # --- WEB SERVER FOR RENDER COMPLIANCE ---
 web_app = Flask(__name__)
 
 @web_app.route('/')
 def home():
-    return "Music Bot is running!"
+    return "Music Bot is running perfectly in memory!"
 
 def run_web_server():
     port = int(os.getenv("PORT", 10000))
@@ -22,8 +22,6 @@ def run_web_server():
 # --- LOAD AUDIO LIST DATABASE ---
 with open('songs.json', 'r') as f:
     SONGS_DB = json.load(f)
-
-FFMPEG_PATH = imageio_ffmpeg.get_ffmpeg_exe()
 
 # --- MENU KEYBOARD LAYOUTS ---
 MAIN_KEYBOARD = ReplyKeyboardMarkup(
@@ -50,14 +48,12 @@ def get_cancel_keyboard():
 
 # --- COMMAND HANDLERS ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Sends welcome layout with navigation dashboard"""
     await update.message.reply_text(
         "👋 Welcome to your Curated Santali Music Bot!\n\nUse the buttons below to explore the playlist catalog.",
         reply_markup=MAIN_KEYBOARD
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Main routing dashboard engine for text commands"""
     text = update.message.text
 
     # 1. Main Navigation Routing
@@ -124,55 +120,57 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ No match found in the database. Returning to main menu.", reply_markup=MAIN_KEYBOARD)
         return
 
-    # 4. Audio Processing and Stream Pipeline Execution
+    # 4. Audio Processing and Stream Pipeline Execution (ZERO DISK USE)
     if text.isdigit():
         song_id = int(text)
         song = next((s for s in SONGS_DB if s['song_id'] == song_id), None)
         
         if not song:
-            await update.message.reply_text("❌ Invalid track selection ID number. Please review the database catalog.")
+            await update.message.reply_text("❌ Invalid track selection ID number.")
             return
 
-        status_msg = await update.message.reply_text(f"⏳ Processing <b>'{song['title']}'</b>...\nFetching audio stream securely from YouTube pipeline. Please hold close.")
+        status_msg = await update.message.reply_text(f"⏳ Processing <b>'{song['title']}'</b>...\nStreaming audio data securely. Please hold close.")
         
-        # Asynchronous stream conversion setup configurations using updated cookies profile
+        # Stream directly into RAM using dynamic pipe targets to completely bypass local storage limits
         ydl_opts = {
             'format': 'bestaudio/best',
-            'cookiefile': 'cookies.txt',  # 🚀 Bypasses YouTube blocks natively using your uploaded file
-            'ffmpeg_location': FFMPEG_PATH,
-            'outtmpl': f"downloads/{song_id}.%(ext)s",
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
+            'cookiefile': 'cookies.txt',
+            'outtmpl': '-',  # 🚀 Directs the download data loop directly to stdout stream pipeline
+            'logtostderr': True,
             'quiet': True
         }
 
         try:
+            buffer = BytesIO()
+            
+            def download_to_buffer():
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(song['youtube_url'], download=False)
+                    url = info['url']
+                    # Download the raw audio payload block into our virtual memory buffer
+                    with ydl.urlopen(url) as req:
+                        buffer.write(req.read())
+            
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([song['youtube_url']]))
-            audio_path = f"downloads/{song_id}.mp3"
+            await loop.run_in_executor(None, download_to_buffer)
+            buffer.seek(0)
             
             await status_msg.edit_text("🚀 Uploading media back to Telegram chat space...")
-            with open(audio_path, 'rb') as audio_file:
-                await update.message.reply_audio(
-                    audio=audio_file, 
-                    title=song['title'], 
-                    performer=song['artist']
-                )
             
-            # Clean temporary file footprint from Render disk storage space
-            if os.path.exists(audio_path):
-                os.remove(audio_path)
+            # Send the virtual memory array cleanly
+            await update.message.reply_audio(
+                audio=buffer, 
+                filename=f"{song['title']}.mp3",
+                title=song['title'], 
+                performer=song['artist']
+            )
             await status_msg.delete()
 
         except Exception as e:
             await status_msg.edit_text("❌ Media download extraction pipeline encountered a connection block or restricted access.")
         return
 
-    # Fallback response for unhandled entries
-    await update.message.reply_text("❌ Unrecognized options navigation entry command. Use the control buttons below.", reply_markup=MAIN_KEYBOARD)
+    await update.message.reply_text("❌ Unrecognized command. Use the control buttons below.", reply_markup=MAIN_KEYBOARD)
 
 def main():
     TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -180,7 +178,6 @@ def main():
         print("Error: Missing TELEGRAM_BOT_TOKEN system configuration key.")
         return
 
-    # Trigger dummy server concurrently to pass deployment check validations
     Thread(target=run_web_server, daemon=True).start()
 
     app = Application.builder().token(TOKEN).build()
