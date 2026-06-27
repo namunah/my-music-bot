@@ -120,7 +120,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ No match found in the database. Returning to main menu.", reply_markup=MAIN_KEYBOARD)
         return
 
-    # 4. Audio Processing Pipeline (Cookie Authentication + Direct Link Inversion)
+    # 4. Audio Processing Pipeline (Universal Stream Fallback)
     if text.isdigit():
         song_id = int(text)
         song = next((s for s in SONGS_DB if s['song_id'] == song_id), None)
@@ -129,33 +129,33 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Invalid track selection ID number.")
             return
 
-        status_msg = await update.message.reply_text(f"⏳ Processing <b>'{song['title']}'</b>...\nBypassing data center restriction rules. Please hold.")
+        status_msg = await update.message.reply_text(f"⏳ Processing <b>'{song['title']}'</b>...\nExtracting audio stream profile. Please wait.")
         
         ydl_opts = {
-            'format': 'bestaudio/best',
+            'format': 'best',  # 🚀 CHANGED: Accepts ANY stream format YouTube returns to prevent format crashes
             'quiet': True,
             'skip_download': True,
             'nocheckcertificate': True,
             'nocachedir': True,
         }
         
-        # 🚀 STRICT RE-ENFORCEMENT OF COOKIES IN THE METADATA SEARCH STEP
         if os.path.exists('cookies.txt'):
             ydl_opts['cookiefile'] = 'cookies.txt'
 
         try:
             loop = asyncio.get_event_loop()
             
-            # Fetch meta dictionary structures using login state
+            # Extract video payload dictionary mapping
             info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(song['youtube_url'], download=False))
             
+            # Find the best available stream link inside the returned manifest
             stream_url = info.get('url')
             if not stream_url:
-                raise ValueError("Could not find direct streaming source.")
+                raise ValueError("Could not extract a valid download target URL.")
                 
-            await status_msg.edit_text("🚀 Downloading audio stream safely through network pipe...")
+            await status_msg.edit_text("🚀 Downloading streaming audio block data...")
             
-            # Download stream bytes directly
+            # Pull stream data using native network pipes
             response = await loop.run_in_executor(None, lambda: requests.get(stream_url, timeout=30))
             
             actual_filename = f"{song_id}.mp3"
@@ -179,7 +179,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             error_message = str(e).split('\n')[0]
             await status_msg.edit_text(
-                f"❌ Connection Trace Error:\n<code>{error_message}</code>\n\n💡 <i>Fix: If it asks for bot sign-in again, your cookies.txt file was expired. Try exporting a new one from your browser tab.</i>", 
+                f"❌ Connection Trace Error:\n<code>{error_message}</code>", 
                 parse_mode="HTML"
             )
             
