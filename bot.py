@@ -119,7 +119,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ No match found in the database. Returning to main menu.", reply_markup=MAIN_KEYBOARD)
         return
 
-    # 4. Audio Processing Pipeline (Universal Auto-Format + Token Engine)
+    # 4. Audio Processing Pipeline (Universal Cookies + Client Sync)
     if text.isdigit():
         song_id = int(text)
         song = next((s for s in SONGS_DB if s['song_id'] == song_id), None)
@@ -128,35 +128,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Invalid track selection ID number.")
             return
 
-        status_msg = await update.message.reply_text(f"⏳ Processing <b>'{song['title']}'</b>...\nBypassing firewalls using visitor token generation. Please wait.")
+        status_msg = await update.message.reply_text(f"⏳ Processing <b>'{song['title']}'</b>...\nBypassing network security check blocks. Please hold.")
         
         output_filename = f"{song_id}.%(ext)s"
         ydl_opts = {
-            'format': 'bestaudio/best',  
+            'format': 'best',  # Grabs the cleanest available unified layout
+            'cookiefile': 'cookies.txt',  # 🚀 FORCES the bot to read your login credentials
             'outtmpl': output_filename,
             'quiet': True,
             'nocheckcertificate': True,
             'nocachedir': True,
-            # 🚀 THE FIXED CLIENT SIMULATION AND PO-TOKEN AUTO-GENERATOR PIPELINE:
             'extractor_args': {
                 'youtube': {
-                    'player_client': ['web_embedded', 'android'],
-                    'po_token': ['web+guest']
+                    'player_client': ['web', 'web_embedded']
                 }
             }
         }
 
         try:
             loop = asyncio.get_event_loop()
-            
-            # Extract internal download parameters safely without ignoring critical errors silently
             info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(song['youtube_url'], download=True))
-            
-            if not info:
-                # Instantly retry using standard best format if web_embedded audio-only streams are throttled
-                ydl_opts['format'] = 'best'
-                info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(song['youtube_url'], download=True))
-
             actual_filename = yt_dlp.YoutubeDL(ydl_opts).prepare_filename(info)
 
             await status_msg.edit_text("🚀 Uploading media back to Telegram chat space...")
