@@ -119,7 +119,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ No match found in the database. Returning to main menu.", reply_markup=MAIN_KEYBOARD)
         return
 
-    # 4. Audio Processing Pipeline
+    # 4. Audio Processing Pipeline (Universal Safe Fallback)
     if text.isdigit():
         song_id = int(text)
         song = next((s for s in SONGS_DB if s['song_id'] == song_id), None)
@@ -132,20 +132,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         output_filename = f"{song_id}.%(ext)s"
         ydl_opts = {
+            # 🚀 CHANGE: Force yt-dlp to grab ANY available stream (best) if pure audio formats are hidden by geo-blocks
             'format': 'bestaudio/best',  
-            'cookiefile': 'cookies.txt',  
             'outtmpl': output_filename,
             'quiet': True,
             'nocheckcertificate': True,
             'nocachedir': True,
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            }
         }
+        
+        # Check if cookie file exists before attaching it dynamically
+        if os.path.exists('cookies.txt'):
+            ydl_opts['cookiefile'] = 'cookies.txt'
 
         try:
             loop = asyncio.get_event_loop()
-            info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(song['youtube_url'], download=True))
+            
+            # Extract internal download parameters safely
+            try:
+                info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(song['youtube_url'], download=True))
+            except Exception:
+                # 🚀 IMMEDIATE FALLBACK: If bestaudio fails or is hidden, drop the restriction and pull universal formats
+                ydl_opts['format'] = 'best/worst'
+                info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(song['youtube_url'], download=True))
+                
             actual_filename = yt_dlp.YoutubeDL(ydl_opts).prepare_filename(info)
 
             await status_msg.edit_text("🚀 Uploading media back to Telegram chat space...")
