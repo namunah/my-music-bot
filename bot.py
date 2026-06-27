@@ -12,7 +12,7 @@ web_app = Flask(__name__)
 
 @web_app.route('/')
 def home():
-    return "Music Bot is running perfectly!"
+    return "Music Bot is running safely!"
 
 def run_web_server():
     port = int(os.getenv("PORT", 10000))
@@ -119,7 +119,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ No match found in the database. Returning to main menu.", reply_markup=MAIN_KEYBOARD)
         return
 
-    # 4. Audio Processing Pipeline (Universal Cookies + Client Sync)
+    # 4. Audio Processing Pipeline
     if text.isdigit():
         song_id = int(text)
         song = next((s for s in SONGS_DB if s['song_id'] == song_id), None)
@@ -132,16 +132,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         output_filename = f"{song_id}.%(ext)s"
         ydl_opts = {
-            'format': 'best',  # Grabs the cleanest available unified layout
-            'cookiefile': 'cookies.txt',  # 🚀 FORCES the bot to read your login credentials
+            'format': 'bestaudio/best',  
+            'cookiefile': 'cookies.txt',  
             'outtmpl': output_filename,
             'quiet': True,
             'nocheckcertificate': True,
             'nocachedir': True,
-            'extractor_args': {
-                'youtube': {
-                    'player_client': ['web', 'web_embedded']
-                }
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             }
         }
 
