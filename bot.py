@@ -47,14 +47,12 @@ def get_cancel_keyboard():
 
 # --- COMMAND HANDLERS ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Sends welcome layout with navigation dashboard"""
     await update.message.reply_text(
         "👋 Welcome to your Curated Santali Music Bot!\n\nUse the buttons below to explore the playlist catalog.",
         reply_markup=MAIN_KEYBOARD
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Main routing dashboard engine for text commands"""
     text = update.message.text
 
     # 1. Main Navigation Routing
@@ -121,7 +119,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ No match found in the database. Returning to main menu.", reply_markup=MAIN_KEYBOARD)
         return
 
-    # 4. Audio Processing Pipeline (Universal Format Fix)
+    # 4. Audio Processing Pipeline (Universal Auto-Format Fix)
     if text.isdigit():
         song_id = int(text)
         song = next((s for s in SONGS_DB if s['song_id'] == song_id), None)
@@ -134,17 +132,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         output_filename = f"{song_id}.%(ext)s"
         ydl_opts = {
-            # 🚀 FIXED: Tells yt-dlp to grab whatever format is available without crashing over strict audio tags
-            'format': 'best',
+            'format': 'bestaudio/best',  
             'cookiefile': 'cookies.txt',  
             'outtmpl': output_filename,
             'quiet': True,
             'nocheckcertificate': True,
-            'extractor_args': {
-                'youtube': {
-                    'player_client': ['android', 'web_embedded']
-                }
-            }
+            'nocachedir': True,  # 🚀 CRITICAL: Wipes out local memory storage blocks entirely
+            'ignoreerrors': True, # 🚀 Prevents crashing if a format is missing
         }
 
         try:
@@ -154,9 +148,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(song['youtube_url'], download=True))
             actual_filename = yt_dlp.YoutubeDL(ydl_opts).prepare_filename(info)
             
+            # If standard bestaudio fails, immediately try standard best universal video fallback
+            if not os.path.exists(actual_filename):
+                ydl_opts['format'] = 'best'
+                info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(song['youtube_url'], download=True))
+                actual_filename = yt_dlp.YoutubeDL(ydl_opts).prepare_filename(info)
+
             await status_msg.edit_text("🚀 Uploading media back to Telegram chat space...")
             
-            # Send file cleanly
             with open(actual_filename, 'rb') as audio_file:
                 await update.message.reply_audio(
                     audio=audio_file, 
@@ -164,7 +163,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     performer=song['artist']
                 )
             
-            # Wipe local file immediately
             if os.path.exists(actual_filename):
                 os.remove(actual_filename)
                 
