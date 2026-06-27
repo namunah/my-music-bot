@@ -1,7 +1,6 @@
 import os
 import json
 import asyncio
-import requests
 from threading import Thread
 from flask import Flask
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
@@ -120,7 +119,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ No match found in the database. Returning to main menu.", reply_markup=MAIN_KEYBOARD)
         return
 
-    # 4. Audio Processing Pipeline (Universal Stream Fallback)
+    # 4. Audio Processing Pipeline (Native Download + Auto-Extraction Engine)
     if text.isdigit():
         song_id = int(text)
         song = next((s for s in SONGS_DB if s['song_id'] == song_id), None)
@@ -129,14 +128,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Invalid track selection ID number.")
             return
 
-        status_msg = await update.message.reply_text(f"⏳ Processing <b>'{song['title']}'</b>...\nExtracting audio stream profile. Please wait.")
+        status_msg = await update.message.reply_text(f"⏳ Processing <b>'{song['title']}'</b>...\nDownloading and extracting audio track layout natively. Please hold.")
+        
+        # Unique naming path to prevent clashes
+        output_template = f"{song_id}.%(ext)s"
+        actual_mp3_path = f"{song_id}.mp3"
         
         ydl_opts = {
-            'format': 'best',  # 🚀 CHANGED: Accepts ANY stream format YouTube returns to prevent format crashes
+            'format': 'bestaudio/best',  # Look for audio first
+            'outtmpl': output_template,
             'quiet': True,
-            'skip_download': True,
             'nocheckcertificate': True,
             'nocachedir': True,
+            # 🚀 THE NATIVE EXTRACTION ENGINE CONFIG: Converts whatever stream it gets into a pure mp3 file automatically
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
         }
         
         if os.path.exists('cookies.txt'):
@@ -145,46 +154,33 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             loop = asyncio.get_event_loop()
             
-            # Extract video payload dictionary mapping
-            info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(song['youtube_url'], download=False))
+            # This triggers the full download and conversion loop smoothly in the background
+            await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).download([song['youtube_url']]))
             
-            # Find the best available stream link inside the returned manifest
-            stream_url = info.get('url')
-            if not stream_url:
-                raise ValueError("Could not extract a valid download target URL.")
-                
-            await status_msg.edit_text("🚀 Downloading streaming audio block data...")
-            
-            # Pull stream data using native network pipes
-            response = await loop.run_in_executor(None, lambda: requests.get(stream_url, timeout=30))
-            
-            actual_filename = f"{song_id}.mp3"
-            with open(actual_filename, 'wb') as f:
-                f.write(response.content)
+            if not os.path.exists(actual_mp3_path):
+                raise FileNotFoundError("Audio extraction conversion path verification missing.")
 
             await status_msg.edit_text("🚀 Uploading media back to Telegram chat space...")
             
-            with open(actual_filename, 'rb') as audio_file:
+            with open(actual_mp3_path, 'rb') as audio_file:
                 await update.message.reply_audio(
                     audio=audio_file, 
                     title=song['title'], 
                     performer=song['artist']
                 )
             
-            if os.path.exists(actual_filename):
-                os.remove(actual_filename)
+            # Clean up local storage immediately
+            if os.path.exists(actual_mp3_path):
+                os.remove(actual_mp3_path)
                 
             await status_msg.delete()
 
         except Exception as e:
             error_message = str(e).split('\n')[0]
-            await status_msg.edit_text(
-                f"❌ Connection Trace Error:\n<code>{error_message}</code>", 
-                parse_mode="HTML"
-            )
+            await status_msg.edit_text(f"❌ Connection Trace Error:\n<code>{error_message}</code>", parse_mode="HTML")
             
-            if 'actual_filename' in locals() and os.path.exists(actual_filename):
-                os.remove(actual_filename)
+            if os.path.exists(actual_mp3_path):
+                os.remove(actual_mp3_path)
         return
 
     await update.message.reply_text("❌ Unrecognized command. Use the control buttons below.", reply_markup=MAIN_KEYBOARD)
