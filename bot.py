@@ -120,7 +120,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ No match found in the database. Returning to main menu.", reply_markup=MAIN_KEYBOARD)
         return
 
-    # 4. Audio Processing Pipeline (Direct Network Link Stream Bypasser)
+    # 4. Audio Processing Pipeline (Cookie Authentication + Direct Link Inversion)
     if text.isdigit():
         song_id = int(text)
         song = next((s for s in SONGS_DB if s['song_id'] == song_id), None)
@@ -129,30 +129,33 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Invalid track selection ID number.")
             return
 
-        status_msg = await update.message.reply_text(f"⏳ Processing <b>'{song['title']}'</b>...\nBypassing network blocks entirely. Please wait.")
+        status_msg = await update.message.reply_text(f"⏳ Processing <b>'{song['title']}'</b>...\nBypassing data center restriction rules. Please hold.")
         
-        # We fetch meta info only, completely skipping local media engine execution paths
         ydl_opts = {
             'format': 'bestaudio/best',
             'quiet': True,
             'skip_download': True,
             'nocheckcertificate': True,
+            'nocachedir': True,
         }
+        
+        # 🚀 STRICT RE-ENFORCEMENT OF COOKIES IN THE METADATA SEARCH STEP
+        if os.path.exists('cookies.txt'):
+            ydl_opts['cookiefile'] = 'cookies.txt'
 
         try:
             loop = asyncio.get_event_loop()
             
-            # Extract raw video info data without trying to execute downloads locally
+            # Fetch meta dictionary structures using login state
             info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(ydl_opts).extract_info(song['youtube_url'], download=False))
             
-            # Extract the raw server stream URL path directly from the metadata packet
             stream_url = info.get('url')
             if not stream_url:
-                raise ValueError("Direct stream signature extraction empty.")
+                raise ValueError("Could not find direct streaming source.")
                 
-            await status_msg.edit_text("🚀 Streaming music data stream past firewall array...")
+            await status_msg.edit_text("🚀 Downloading audio stream safely through network pipe...")
             
-            # Fetch the data using high-speed native Python network streams instead of locked local executables
+            # Download stream bytes directly
             response = await loop.run_in_executor(None, lambda: requests.get(stream_url, timeout=30))
             
             actual_filename = f"{song_id}.mp3"
@@ -174,10 +177,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await status_msg.delete()
 
         except Exception as e:
-            # Final bulletproof backup: If metadata scraping gets restricted, use clean fallback direct stream link structures
             error_message = str(e).split('\n')[0]
             await status_msg.edit_text(
-                f"❌ Connection Trace Error:\n<code>{error_message}</code>\n\n💡 <i>Tip: If the error persists, YouTube has locked this server node cluster. Try manual deploy clear cache to shift server zones.</i>", 
+                f"❌ Connection Trace Error:\n<code>{error_message}</code>\n\n💡 <i>Fix: If it asks for bot sign-in again, your cookies.txt file was expired. Try exporting a new one from your browser tab.</i>", 
                 parse_mode="HTML"
             )
             
